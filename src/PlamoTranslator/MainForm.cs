@@ -27,6 +27,11 @@ internal sealed class MainForm : Form
         Name = "targetLanguage", AccessibleName = "翻訳先", DisplayMember = "Value",
         DropDownStyle = ComboBoxStyle.DropDownList, Width = 180
     };
+    private readonly Button swap = new()
+    {
+        Name = "swapLanguagesButton", Text = "⇄", AccessibleName = "入力言語と翻訳先を入れ替える",
+        AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(8, 0, 8, 0)
+    };
     private readonly Button translate = new() { Name = "translateButton", Text = "翻訳(&T)", AutoSize = true };
     private readonly Button cancel = new() { Name = "cancelButton", Text = "キャンセル(&C)", AutoSize = true, Enabled = false };
     private readonly Button copy = new() { Name = "copyButton", Text = "結果をコピー(&Y)", AutoSize = true, Enabled = false };
@@ -65,7 +70,7 @@ internal sealed class MainForm : Form
         var toolbar = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Margin = new Padding(0, 0, 0, 12) };
         toolbar.Controls.AddRange([
             new Label { Text = "入力言語(&I)", AutoSize = true, Margin = new Padding(0, 6, 8, 0) },
-            sourceLanguage,
+            sourceLanguage, swap,
             new Label { Text = "翻訳先(&D)", AutoSize = true, Margin = new Padding(8, 6, 8, 0) },
             targetLanguage, translate, cancel, copy
         ]);
@@ -100,6 +105,8 @@ internal sealed class MainForm : Form
         Controls.Add(layout);
 
         source.TextChanged += (_, _) => UpdateControls();
+        swap.Click += (_, _) => (sourceLanguage.SelectedIndex, targetLanguage.SelectedIndex) =
+            (targetLanguage.SelectedIndex, sourceLanguage.SelectedIndex);
         translate.Click += async (_, _) => await TranslateAsync();
         cancel.Click += (_, _) => operation?.Cancel();
         copy.Click += (_, _) => CopyOutput();
@@ -213,6 +220,7 @@ internal sealed class MainForm : Form
         source.ReadOnly = operation is not null;
         sourceLanguage.Enabled = operation is null;
         targetLanguage.Enabled = operation is null;
+        swap.Enabled = operation is null;
     }
 
     private void SetStatus(string message, bool error = false)
