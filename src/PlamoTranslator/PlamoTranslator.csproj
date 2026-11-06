@@ -5,8 +5,10 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="PlamoTranslator.Tests" />
+    <EmbeddedResource Include="Assets\AppIcon.ico" LogicalName="PlamoTranslator.AppIcon.ico" />
   </ItemGroup>
 </Project>

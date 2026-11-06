@@ -53,6 +53,8 @@ internal sealed class MainForm : Form
     {
         translator = new OllamaTranslator(http);
         Text = "PLaMo Translate";
+        using var iconStream = typeof(MainForm).Assembly.GetManifestResourceStream("PlamoTranslator.AppIcon.ico")!;
+        Icon = new Icon(iconStream);
         Name = "mainForm";
         Font = new Font("Yu Gothic UI", 10);
         AutoScaleMode = AutoScaleMode.Font;
