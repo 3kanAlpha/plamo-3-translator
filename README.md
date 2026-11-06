@@ -86,4 +86,7 @@ dotnet publish src/PlamoTranslator -c Release --self-contained false -o artifact
 - [PFN公式モデル・使用手順](https://huggingface.co/pfnet/plamo-3-translate-2b-GGUF/blob/main/README_ja.md)
 - [Ollamaでの実機検証記録](docs/ollama-verification.md)
 
+## ライセンス
+
+本アプリは[MITライセンス](LICENSE)で公開しています。
 モデルのライセンスは配布元のPLaMo Community Licenseに従ってください。
