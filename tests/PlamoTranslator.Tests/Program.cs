@@ -16,6 +16,7 @@ internal static class Program
         {
             RunAsync(args.Contains("--live")).GetAwaiter().GetResult();
             CheckForm();
+            CheckThemeSettings();
             Console.WriteLine($"PASS: {assertions} assertions" + (args.Contains("--live") ? " (including live Ollama)" : ""));
             return 0;
         }
@@ -176,34 +177,102 @@ internal static class Program
     {
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
-        using var form = new MainForm();
-        var source = (RichTextBox)form.Controls.Find("sourceInput", true).Single();
-        _ = source.Handle;
-        var button = (Button)form.Controls.Find("translateButton", true).Single();
-        var count = (Label)form.Controls.Find("characterCount", true).Single();
-        var sourceLanguage = (ComboBox)form.Controls.Find("sourceLanguage", true).Single();
-        var targetLanguage = (ComboBox)form.Controls.Find("targetLanguage", true).Single();
-        Assert(sourceLanguage.Items.Count == 53 && targetLanguage.Items.Count == 53, "両方の選択欄に53言語を用意する");
-        Assert(((KeyValuePair<string, string>)sourceLanguage.SelectedItem!).Key == "en" &&
-            ((KeyValuePair<string, string>)targetLanguage.SelectedItem!).Key == "ja", "初期値は英語から日本語");
-        sourceLanguage.SelectedItem = OllamaTranslator.Languages.Single(language => language.Key == "fr");
-        targetLanguage.SelectedItem = OllamaTranslator.Languages.Single(language => language.Key == "de");
-        Assert(((KeyValuePair<string, string>)sourceLanguage.SelectedItem!).Key == "fr" &&
-            ((KeyValuePair<string, string>)targetLanguage.SelectedItem!).Key == "de", "入力言語と翻訳先を独立して選択できる");
-        Assert(!button.Enabled, "空欄では翻訳ボタンが無効");
-        source.Text = new string('文', 4096);
-        Assert(button.Enabled && count.Text.Contains("4,096 / 4,096"), "上限ちょうどでは翻訳可能");
-        source.Text += "文";
-        Assert(!button.Enabled && source.Text.Length == 4097 && count.Text.Contains("上限超過"), "上限超過を表示し、原文を切り捨てない");
-        source.Text = "正常な入力";
-        Assert(button.Enabled, "原文を短くすると再び翻訳可能");
-        source.Text = "first\nsecond";
-        Assert(source.GetPositionFromCharIndex(6).Y > source.GetPositionFromCharIndex(0).Y, "LF改行の原文を複数行に表示する");
-        var output = (RichTextBox)form.Controls.Find("translationOutput", true).Single();
-        _ = output.Handle;
-        output.AppendText("first\n");
-        output.AppendText("second");
-        Assert(output.GetPositionFromCharIndex(6).Y > output.GetPositionFromCharIndex(0).Y, "順次受信した訳文の改行を表示する");
+        var settingsPath = Path.Combine(Path.GetTempPath(), "PlamoTranslator-tests-" + Guid.NewGuid(), "theme.txt");
+        try
+        {
+            using var form = new MainForm(new ThemeSettings(settingsPath));
+            var source = (RichTextBox)form.Controls.Find("sourceInput", true).Single();
+            _ = source.Handle;
+            var button = (Button)form.Controls.Find("translateButton", true).Single();
+            var count = (Label)form.Controls.Find("characterCount", true).Single();
+            var sourceLanguage = (ComboBox)form.Controls.Find("sourceLanguage", true).Single();
+            var targetLanguage = (ComboBox)form.Controls.Find("targetLanguage", true).Single();
+            Assert(button.Region is { } buttonRegion && !buttonRegion.IsVisible(0, 0) && !buttonRegion.IsVisible(1, 1) &&
+                buttonRegion.IsVisible(button.Width / 2, button.Height / 2), "ボタンの角はクリック領域から除き、中央は含める");
+            Assert(sourceLanguage.Items.Count == 53 && targetLanguage.Items.Count == 53, "両方の選択欄に53言語を用意する");
+            Assert(((KeyValuePair<string, string>)sourceLanguage.SelectedItem!).Key == "en" &&
+                ((KeyValuePair<string, string>)targetLanguage.SelectedItem!).Key == "ja", "初期値は英語から日本語");
+            sourceLanguage.SelectedItem = OllamaTranslator.Languages.Single(language => language.Key == "fr");
+            targetLanguage.SelectedItem = OllamaTranslator.Languages.Single(language => language.Key == "de");
+            Assert(((KeyValuePair<string, string>)sourceLanguage.SelectedItem!).Key == "fr" &&
+                ((KeyValuePair<string, string>)targetLanguage.SelectedItem!).Key == "de", "入力言語と翻訳先を独立して選択できる");
+            Assert(!button.Enabled, "空欄では翻訳ボタンが無効");
+            source.Text = new string('文', 4096);
+            Assert(button.Enabled && count.Text.Contains("4,096 / 4,096"), "上限ちょうどでは翻訳可能");
+            source.Text += "文";
+            Assert(!button.Enabled && source.Text.Length == 4097 && count.Text.Contains("上限超過"), "上限超過を表示し、原文を切り捨てない");
+            source.Text = "正常な入力";
+            Assert(button.Enabled, "原文を短くすると再び翻訳可能");
+            source.Text = "first\nsecond";
+            Assert(source.GetPositionFromCharIndex(6).Y > source.GetPositionFromCharIndex(0).Y, "LF改行の原文を複数行に表示する");
+            var output = (RichTextBox)form.Controls.Find("translationOutput", true).Single();
+            _ = output.Handle;
+            output.AppendText("first\n");
+            output.AppendText("second");
+            Assert(output.GetPositionFromCharIndex(6).Y > output.GetPositionFromCharIndex(0).Y, "順次受信した訳文の改行を表示する");
+            var theme = (ComboBox)form.Controls.Find("themeSelector", true).Single();
+            Assert(theme.SelectedIndex == 0 && theme.Items.Count == 3, "テーマの初期値はシステムで3種類から選べる");
+            source.Select(1, 3);
+            var sourceText = source.Text;
+            theme.SelectedIndex = 2;
+            Assert(source.Text == sourceText && output.Text == "first\nsecond" && source.SelectionStart == 1 && source.SelectionLength == 3,
+                "ダーク切替で入力・訳文・選択範囲を保持する");
+            if (!SystemInformation.HighContrast)
+            {
+                Assert(source.BackColor.GetBrightness() < 0.3f && source.ForeColor.GetBrightness() > 0.8f,
+                    "ダークでは入力欄の背景が暗く文字が明るい");
+                source.Text = new string('文', 4097);
+                var errorColor = count.ForeColor;
+                theme.SelectedIndex = 1;
+                Assert(count.ForeColor != errorColor && count.Text.Contains("上限超過"), "切替後も上限エラーを配色に合わせて保持する");
+                Assert(source.BackColor == Color.White && output.BackColor == Color.White, "ライトでは両方の本文欄が白い");
+            }
+            theme.SelectedIndex = 0;
+            Assert(Application.IsDarkModeEnabled == (Application.SystemColorMode == SystemColorMode.Dark), "システムの現在の配色を反映する");
+            using var bitmap = new Bitmap(form.Width, form.Height);
+            foreach (var index in new[] { 1, 2, 0 })
+            {
+                theme.SelectedIndex = index;
+                form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, form.Size));
+                foreach (Control control in sourceLanguage.Parent!.Controls)
+                    Assert(Math.Abs(control.Top + control.Height / 2.0 - sourceLanguage.Top - sourceLanguage.Height / 2.0) <= 1,
+                        $"ツールバーのラベル・選択欄・ボタンを縦方向に中央揃えする: {control.Name} {control.Bounds}, {sourceLanguage.Bounds}");
+                var outputTitle = output.Parent!.Parent!.Controls.OfType<Label>().Single(label => label.Text == "訳文(&O)");
+                Assert(outputTitle.Left >= output.Parent.Left, $"訳文の見出しを訳文欄の上に配置する: {outputTitle.Bounds}, {output.Parent.Bounds}");
+                Assert(((KeyValuePair<string, string>)sourceLanguage.SelectedItem!).Key == "fr" &&
+                    ((KeyValuePair<string, string>)targetLanguage.SelectedItem!).Key == "de",
+                    "各テーマで画面を再描画しても言語の選択を保持する");
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(Path.GetDirectoryName(settingsPath)))
+                Directory.Delete(Path.GetDirectoryName(settingsPath)!, true);
+        }
+    }
+
+    private static void CheckThemeSettings()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "PlamoTranslator-settings-" + Guid.NewGuid());
+        var path = Path.Combine(directory, "theme.txt");
+        var settings = new ThemeSettings(path);
+        Assert(settings.Load() == SystemColorMode.System, "設定がない場合はシステム");
+        try
+        {
+            foreach (var mode in new[] { SystemColorMode.Classic, SystemColorMode.Dark, SystemColorMode.System })
+                Assert(settings.Save(mode) && settings.Load() == mode, "テーマを保存して読み戻せる");
+            File.WriteAllText(path, "invalid");
+            Assert(settings.Load() == SystemColorMode.System, "壊れた設定ではシステムへ戻る");
+            var inaccessible = new ThemeSettings(Path.Combine(path, "theme.txt"));
+            Assert(!inaccessible.Save(SystemColorMode.Dark), "書き込めない設定で例外を画面へ漏らさない");
+            foreach (var dark in new[] { false, true })
+            {
+                var colors = ThemeColors.Create(dark, true);
+                Assert(colors.Surface == SystemColors.Window && colors.Accent == SystemColors.Highlight,
+                    "コントラストテーマではライト・ダークの指定よりOS配色を優先する");
+            }
+        }
+        finally { Directory.Delete(directory, true); }
     }
 
     private static async Task<string> CollectAsync(OllamaTranslator translator, string source = "test", string sourceLanguage = "en", string targetLanguage = "ja",

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using Microsoft.Win32;
 
 namespace PlamoTranslator;
 
@@ -17,30 +18,39 @@ internal sealed class MainForm : Form
         ScrollBars = RichTextBoxScrollBars.Vertical, Dock = DockStyle.Fill, BackColor = SystemColors.Window,
         MaxLength = int.MaxValue
     };
-    private readonly ComboBox sourceLanguage = new()
+    private readonly ThemeComboBox sourceLanguage = new()
     {
         Name = "sourceLanguage", AccessibleName = "入力言語", DisplayMember = "Value",
         DropDownStyle = ComboBoxStyle.DropDownList, Width = 180
     };
-    private readonly ComboBox targetLanguage = new()
+    private readonly ThemeComboBox targetLanguage = new()
     {
         Name = "targetLanguage", AccessibleName = "翻訳先", DisplayMember = "Value",
         DropDownStyle = ComboBoxStyle.DropDownList, Width = 180
     };
-    private readonly Button swap = new()
+    private readonly ThemeButton swap = new()
     {
         Name = "swapLanguagesButton", Text = "⇄", AccessibleName = "入力言語と翻訳先を入れ替える",
         AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(8, 0, 8, 0)
     };
-    private readonly Button translate = new() { Name = "translateButton", Text = "翻訳(&T)", AutoSize = true };
-    private readonly Button cancel = new() { Name = "cancelButton", Text = "キャンセル(&C)", AutoSize = true, Enabled = false };
-    private readonly Button copy = new() { Name = "copyButton", Text = "結果をコピー(&Y)", AutoSize = true, Enabled = false };
+    private readonly ThemeButton translate = new() { Name = "translateButton", Text = "翻訳(&T)", AutoSize = true };
+    private readonly ThemeButton cancel = new() { Name = "cancelButton", Text = "キャンセル(&C)", AutoSize = true, Enabled = false };
+    private readonly ThemeButton copy = new() { Name = "copyButton", Text = "結果をコピー(&Y)", AutoSize = true, Enabled = false };
     private readonly Label count = new() { Name = "characterCount", AutoSize = true, Margin = new Padding(0, 8, 0, 0) };
     private readonly Label outputLabel = new() { Text = "訳文(&O)", AutoSize = true, Margin = new Padding(0, 8, 0, 8) };
     private readonly Label status = new()
     {
         Name = "statusMessage", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft
     };
+    private readonly ThemeComboBox theme = new()
+    {
+        Name = "themeSelector", AccessibleName = "テーマ", DisplayMember = "Value",
+        DropDownStyle = ComboBoxStyle.DropDownList, Width = 130
+    };
+    private readonly ThemeSettings settings;
+    private ThemeColors colors = ThemeColors.Create(false, false);
+    private bool statusIsError;
+    private bool applyingTheme;
     private readonly HttpClient http = new(new SocketsHttpHandler
     {
         UseProxy = false, AllowAutoRedirect = false, ConnectTimeout = TimeSpan.FromSeconds(5)
@@ -49,8 +59,9 @@ internal sealed class MainForm : Form
     private CancellationTokenSource? operation;
     private bool closeRequested;
 
-    internal MainForm()
+    internal MainForm(ThemeSettings settings)
     {
+        this.settings = settings;
         translator = new OllamaTranslator(http);
         Text = "PLaMo Translate";
         using var iconStream = typeof(MainForm).Assembly.GetManifestResourceStream("PlamoTranslator.AppIcon.ico")!;
@@ -77,6 +88,30 @@ internal sealed class MainForm : Form
             targetLanguage, translate, cancel, copy
         ]);
 
+        theme.Items.AddRange(new object[]
+        {
+            new KeyValuePair<SystemColorMode, string>(SystemColorMode.System, "システム"),
+            new KeyValuePair<SystemColorMode, string>(SystemColorMode.Classic, "ライト"),
+            new KeyValuePair<SystemColorMode, string>(SystemColorMode.Dark, "ダーク")
+        });
+        theme.TabIndex = 1;
+        theme.SelectedIndex = settings.Load() switch { SystemColorMode.Classic => 1, SystemColorMode.Dark => 2, _ => 0 };
+        var appearance = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false, Margin = new Padding(0, 0, 0, 8)
+        };
+        appearance.Controls.AddRange([theme,
+            new Label { Text = "テーマ(&M)", TabIndex = 0, AutoSize = true, Margin = new Padding(0, 6, 8, 0) }]);
+        foreach (var row in new[] { toolbar, appearance })
+        {
+            foreach (Control control in row.Controls)
+            {
+                control.Anchor = AnchorStyles.Left;
+                control.Margin = new Padding(control.Margin.Left, 3, control.Margin.Right, 3);
+            }
+        }
+
         var editors = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 3, Margin = Padding.Empty };
         editors.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         editors.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
@@ -90,20 +125,22 @@ internal sealed class MainForm : Form
         editors.Controls.Add(outputLabel, 1, 0);
         source.Margin = new Padding(0, 0, 12, 0);
         output.Margin = Padding.Empty;
-        editors.Controls.Add(source, 0, 1);
-        editors.Controls.Add(output, 1, 1);
+        editors.Controls.Add(FrameEditor(source), 0, 1);
+        editors.Controls.Add(FrameEditor(output), 1, 1);
         editors.Controls.Add(count, 0, 2);
 
         var layout = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill, Padding = new Padding(16), ColumnCount = 1, RowCount = 3
+            Dock = DockStyle.Fill, Padding = new Padding(16), ColumnCount = 1, RowCount = 4
         };
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
-        layout.Controls.Add(toolbar, 0, 0);
-        layout.Controls.Add(editors, 0, 1);
-        layout.Controls.Add(status, 0, 2);
+        layout.Controls.Add(appearance, 0, 0);
+        layout.Controls.Add(toolbar, 0, 1);
+        layout.Controls.Add(editors, 0, 2);
+        layout.Controls.Add(status, 0, 3);
         Controls.Add(layout);
 
         source.TextChanged += (_, _) => UpdateControls();
@@ -112,6 +149,17 @@ internal sealed class MainForm : Form
         translate.Click += async (_, _) => await TranslateAsync();
         cancel.Click += (_, _) => operation?.Cancel();
         copy.Click += (_, _) => CopyOutput();
+        theme.SelectedIndexChanged += (_, _) =>
+        {
+            ApplyTheme();
+            if (!settings.Save(SelectedTheme))
+                SetStatus("テーマを保存できませんでした。現在の表示には適用していますが、次回起動時には引き継がれません。", true);
+        };
+        foreach (var button in new[] { swap, translate, cancel, copy })
+            button.EnabledChanged += (_, _) => StyleButton(button);
+        foreach (var control in new Control[] { source, output, sourceLanguage, targetLanguage, theme })
+            control.HandleCreated += OnThemedHandleCreated;
+        SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
         Shown += async (_, _) => await CheckConnectionAsync();
         FormClosing += (_, e) =>
         {
@@ -122,8 +170,109 @@ internal sealed class MainForm : Form
                 operation.Cancel();
             }
         };
-        FormClosed += (_, _) => http.Dispose();
-        UpdateControls();
+        ApplyTheme();
+    }
+
+    private SystemColorMode SelectedTheme => ((KeyValuePair<SystemColorMode, string>)theme.SelectedItem!).Key;
+
+    private Panel FrameEditor(RichTextBox editor)
+    {
+        var frame = new Panel { Dock = DockStyle.Fill, Padding = new Padding(1), Margin = editor.Margin };
+        editor.Margin = Padding.Empty;
+        editor.BorderStyle = BorderStyle.None;
+        frame.Controls.Add(editor);
+        editor.GotFocus += (_, _) => frame.BackColor = colors.Accent;
+        editor.LostFocus += (_, _) => frame.BackColor = colors.Border;
+        return frame;
+    }
+
+    private void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
+    {
+        if (e.Category is UserPreferenceCategory.General or UserPreferenceCategory.Color
+            or UserPreferenceCategory.VisualStyle or UserPreferenceCategory.Accessibility)
+        {
+            if (IsHandleCreated && !IsDisposed)
+                _ = InvokeAsync(() => { if (!IsDisposed) ApplyTheme(); });
+        }
+    }
+
+    private void ApplyTheme()
+    {
+        if (applyingTheme) return;
+        applyingTheme = true;
+        try
+        {
+            var highContrast = SystemInformation.HighContrast;
+            var mode = highContrast ? SystemColorMode.Classic
+                : SelectedTheme == SystemColorMode.System ? Application.SystemColorMode : SelectedTheme;
+            Application.SetColorMode(mode);
+            colors = ThemeColors.Create(mode == SystemColorMode.Dark, highContrast);
+            ApplyColors(this);
+            FormCaptionBackColor = highContrast ? Color.Empty : colors.Background;
+            FormCaptionTextColor = highContrast ? Color.Empty : colors.Text;
+            UpdateControls();
+            status.ForeColor = statusIsError ? colors.Error : ForeColor;
+            Invalidate(true);
+        }
+        finally { applyingTheme = false; }
+    }
+
+    private void ApplyColors(Control control)
+    {
+        var highContrast = SystemInformation.HighContrast;
+        control.BackColor = control is RichTextBox or ComboBox ? colors.Surface : colors.Background;
+        control.ForeColor = highContrast && control is not (RichTextBox or ComboBox)
+            ? SystemColors.ControlText : colors.Text;
+        if (control is Panel && control.Controls.Count == 1 && control.Controls[0] is RichTextBox editor)
+            control.BackColor = editor.Focused ? colors.Accent : colors.Border;
+        if (control is Button button)
+            StyleButton(button);
+        if (control is ThemeComboBox combo)
+        {
+            combo.Colors = colors;
+            combo.FlatStyle = highContrast ? FlatStyle.Standard : FlatStyle.Flat;
+        }
+        if (control is RichTextBox or ComboBox && control.IsHandleCreated)
+            ApplyNativeTheme(control);
+        foreach (Control child in control.Controls)
+            ApplyColors(child);
+    }
+
+    private void OnThemedHandleCreated(object? sender, EventArgs e) => ApplyNativeTheme((Control)sender!);
+
+    private static void ApplyNativeTheme(Control control)
+    {
+        // Native scrollbars and combo arrows keep their old theme until explicitly refreshed.
+        _ = SetWindowTheme(control.Handle, SystemInformation.HighContrast ? null
+            : Application.IsDarkModeEnabled ? "DarkMode_Explorer" : "Explorer", null);
+    }
+
+    private void StyleButton(Button button)
+    {
+        var highContrast = SystemInformation.HighContrast;
+        button.FlatStyle = highContrast ? FlatStyle.Standard : FlatStyle.Flat;
+        button.UseVisualStyleBackColor = highContrast;
+        button.BackColor = highContrast ? SystemColors.Control
+            : button == translate && button.Enabled ? colors.Accent : colors.Surface;
+        button.ForeColor = !button.Enabled ? colors.Muted
+            : button == translate ? colors.AccentText : colors.Text;
+        if (highContrast) button.ForeColor = SystemColors.ControlText;
+        button.FlatAppearance.BorderColor = colors.Border;
+        button.FlatAppearance.MouseOverBackColor = button == translate ? colors.Accent : colors.Background;
+        button.FlatAppearance.MouseDownBackColor = button == translate ? colors.Accent : colors.Background;
+    }
+
+    [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
+    private static extern int SetWindowTheme(IntPtr hwnd, string? subAppName, string? subIdList);
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
+            http.Dispose();
+        }
+        base.Dispose(disposing);
     }
 
     private async Task CheckConnectionAsync()
@@ -215,7 +364,7 @@ internal sealed class MainForm : Form
         count.Text = $"{characters:N0} / {OllamaTranslator.MaxCharacters:N0}文字" +
             (characters > OllamaTranslator.MaxCharacters ? "（上限超過）" : "") +
             (source.Text.Contains("<|plamo:", StringComparison.Ordinal) ? "（制御トークンは使用できません）" : "");
-        count.ForeColor = characters > OllamaTranslator.MaxCharacters ? Color.Firebrick : SystemColors.ControlText;
+        count.ForeColor = characters > OllamaTranslator.MaxCharacters ? colors.Error : ForeColor;
         translate.Enabled = operation is null && error is null;
         cancel.Enabled = operation is not null;
         copy.Enabled = operation is null && output.TextLength > 0;
@@ -228,7 +377,8 @@ internal sealed class MainForm : Form
     private void SetStatus(string message, bool error = false)
     {
         status.Text = message;
-        status.ForeColor = error ? Color.Firebrick : SystemColors.ControlText;
+        statusIsError = error;
+        status.ForeColor = error ? colors.Error : ForeColor;
     }
 
     private void CopyOutput()

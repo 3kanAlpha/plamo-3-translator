@@ -6,6 +6,8 @@ internal static class Program
     private static void Main()
     {
         ApplicationConfiguration.Initialize();
-        Application.Run(new MainForm());
+        var settings = new ThemeSettings(ThemeSettings.DefaultPath);
+        Application.SetColorMode(settings.Load());
+        Application.Run(new MainForm(settings));
     }
 }
