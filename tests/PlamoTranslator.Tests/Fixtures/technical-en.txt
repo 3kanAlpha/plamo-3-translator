@@ -1,6 +1,6 @@
 # Local Translator
 
-This Windows application translates text locally with Ollama. Paste a technical document into the source field, choose the translation direction, and press Translate. The result appears gradually on the right. Japanese output uses a polite style.
+This Windows application translates text locally with Ollama. Paste a technical document into the source field, choose the source and target languages, and press Translate. The result appears gradually on the right. Japanese output uses a polite style.
 
 ## Setup
 
@@ -8,7 +8,7 @@ Start Ollama before opening the application. The default endpoint is http://127.
 
 ## Input
 
-The source is limited to 2,048 characters, including spaces and line breaks. If the limit is exceeded, the application keeps the entire source and disables translation. Shorten the text to continue. Empty input cannot be translated. Language detection is not automatic: select English to Japanese or Japanese to English.
+The source is limited to 4,096 characters, including spaces and line breaks. If the limit is exceeded, the application keeps the entire source and disables translation. Shorten the text to continue. Empty input cannot be translated. Language detection is not automatic: select the source and target languages separately.
 
 ## Cancellation
 

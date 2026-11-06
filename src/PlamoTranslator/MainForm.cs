@@ -17,9 +17,15 @@ internal sealed class MainForm : Form
         ScrollBars = RichTextBoxScrollBars.Vertical, Dock = DockStyle.Fill, BackColor = SystemColors.Window,
         MaxLength = int.MaxValue
     };
-    private readonly ComboBox direction = new()
+    private readonly ComboBox sourceLanguage = new()
     {
-        Name = "translationDirection", AccessibleName = "翻訳方向", DropDownStyle = ComboBoxStyle.DropDownList, Width = 180
+        Name = "sourceLanguage", AccessibleName = "入力言語", DisplayMember = "Value",
+        DropDownStyle = ComboBoxStyle.DropDownList, Width = 180
+    };
+    private readonly ComboBox targetLanguage = new()
+    {
+        Name = "targetLanguage", AccessibleName = "翻訳先", DisplayMember = "Value",
+        DropDownStyle = ComboBoxStyle.DropDownList, Width = 180
     };
     private readonly Button translate = new() { Name = "translateButton", Text = "翻訳(&T)", AutoSize = true };
     private readonly Button cancel = new() { Name = "cancelButton", Text = "キャンセル(&C)", AutoSize = true, Enabled = false };
@@ -49,12 +55,19 @@ internal sealed class MainForm : Form
         MinimumSize = new Size(760, 520);
         StartPosition = FormStartPosition.CenterScreen;
 
-        direction.Items.AddRange(["英語 → 日本語", "日本語 → 英語"]);
-        direction.SelectedIndex = 0;
+        foreach (var language in OllamaTranslator.Languages)
+        {
+            sourceLanguage.Items.Add(language);
+            targetLanguage.Items.Add(language);
+        }
+        sourceLanguage.SelectedIndex = 1;
+        targetLanguage.SelectedIndex = 0;
         var toolbar = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Margin = new Padding(0, 0, 0, 12) };
         toolbar.Controls.AddRange([
-            new Label { Text = "翻訳方向(&D)", AutoSize = true, Margin = new Padding(0, 6, 8, 0) },
-            direction, translate, cancel, copy
+            new Label { Text = "入力言語(&I)", AutoSize = true, Margin = new Padding(0, 6, 8, 0) },
+            sourceLanguage,
+            new Label { Text = "翻訳先(&D)", AutoSize = true, Margin = new Padding(8, 6, 8, 0) },
+            targetLanguage, translate, cancel, copy
         ]);
 
         var editors = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 3, Margin = Padding.Empty };
@@ -146,9 +159,12 @@ internal sealed class MainForm : Form
             outputLabel.Text = "訳文(&O)";
             started = true;
             SetStatus("翻訳中… 初回のモデル読み込みには時間がかかることがあります。");
-            await foreach (var part in translator.TranslateAsync(source.Text, direction.SelectedIndex == 0, operation.Token))
+            var sourceCode = ((KeyValuePair<string, string>)sourceLanguage.SelectedItem!).Key;
+            var targetCode = ((KeyValuePair<string, string>)targetLanguage.SelectedItem!).Key;
+            await foreach (var part in translator.TranslateAsync(source.Text, sourceCode, targetCode, operation.Token))
                 output.AppendText(part);
-            SetStatus($"翻訳完了（{timer.Elapsed.TotalSeconds:F1}秒）。結果をコピーできます。");
+            var speed = translator.TokensPerSecond is { } tokensPerSecond ? $"、{tokensPerSecond:F1} token/s" : "、生成速度は取得できませんでした";
+            SetStatus($"翻訳完了（{timer.Elapsed.TotalSeconds:F1}秒{speed}）。結果をコピーできます。");
         }
         catch (OperationCanceledException)
         {
@@ -187,7 +203,7 @@ internal sealed class MainForm : Form
     {
         var characters = OllamaTranslator.CountCharacters(source.Text);
         var error = OllamaTranslator.GetValidationError(source.Text);
-        count.Text = $"{characters:N0} / 2,048文字" +
+        count.Text = $"{characters:N0} / {OllamaTranslator.MaxCharacters:N0}文字" +
             (characters > OllamaTranslator.MaxCharacters ? "（上限超過）" : "") +
             (source.Text.Contains("<|plamo:", StringComparison.Ordinal) ? "（制御トークンは使用できません）" : "");
         count.ForeColor = characters > OllamaTranslator.MaxCharacters ? Color.Firebrick : SystemColors.ControlText;
@@ -195,7 +211,8 @@ internal sealed class MainForm : Form
         cancel.Enabled = operation is not null;
         copy.Enabled = operation is null && output.TextLength > 0;
         source.ReadOnly = operation is not null;
-        direction.Enabled = operation is null;
+        sourceLanguage.Enabled = operation is null;
+        targetLanguage.Enabled = operation is null;
     }
 
     private void SetStatus(string message, bool error = false)
